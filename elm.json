@@ -1,18 +1,18 @@
 {
-	"name": "kudzu-forest/elm-random-tree",
     "type": "package",
-	"summary": "tree structure that allows fast random picking up",
-	"license": "MIT",
-	"version": "1.0.0",
+    "name": "kudzu-forest/elm-random-tree",
+    "summary": "tree structure that allows fast random picking up",
+    "license": "MIT",
+    "version": "1.0.1",
     "exposed-modules": [
         "RandomTree"
     ],
     "elm-version": "0.19.1 <= v < 0.20.0",
     "dependencies": {
-            "elm/core": "1.0.5 <= v < 2.0.0",
-            "elm/random": "1.0.0 <= v < 2.0.0",
-            "kudzu-forest/elm-wide-float": "2.0.1 <= v < 3.0.0",
-            "myrho/elm-round": "1.0.5 <= v < 2.0.0"
+        "elm/core": "1.0.5 <= v < 2.0.0",
+        "elm/random": "1.0.0 <= v < 2.0.0",
+        "kudzu-forest/elm-wide-float": "2.0.1 <= v < 3.0.0",
+        "myrho/elm-round": "1.0.5 <= v < 2.0.0"
     },
-	"test-dependencies":{}
+    "test-dependencies": {}
 }

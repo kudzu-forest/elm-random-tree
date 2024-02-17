@@ -49,7 +49,7 @@ module RandomTree exposing
 
 import Bitwise
 import Random
-import WideFloat exposing (add)
+import WideFloat exposing (add, proportionOf)
 
 
 {-| Type that represent floating point number with wider range than `Float` in core package. This is introduced for preventing overflow of exponentially changing value.
@@ -276,11 +276,17 @@ get_ x n =
                 RandomTree l ->
                     case b.r of
                         RandomTree r ->
-                            if x < WideFloat.proportionOf l.w r.w then
-                                get_ x l.n
+                            let
+                                p =
+                                    proportionOf
+                                        l.w
+                                        r.w
+                            in
+                            if x < p then
+                                get_ (x / p) l.n
 
                             else
-                                get_ x r.n
+                                get_ ((x - p) / (1 - p)) r.n
 
         Leaf leaf ->
             leaf
@@ -305,11 +311,17 @@ take_ x t list =
                 RandomTree l ->
                     case b.r of
                         RandomTree r ->
-                            if x < WideFloat.proportionOf l.w r.w then
-                                take_ x l (r :: list)
+                            let
+                                p =
+                                    proportionOf
+                                        l.w
+                                        r.w
+                            in
+                            if x < p then
+                                take_ (x / p) l (r :: list)
 
                             else
-                                take_ x r (l :: list)
+                                take_ ((x - p) / (1 - p)) r (l :: list)
 
         Leaf leaf ->
             let
@@ -346,11 +358,17 @@ replace_ x e c list =
                 RandomTree l ->
                     case b.r of
                         RandomTree r ->
-                            if x < WideFloat.proportionOf l.w r.w then
-                                replace_ x e l (r :: list)
+                            let
+                                p =
+                                    proportionOf
+                                        l.w
+                                        r.w
+                            in
+                            if x < p then
+                                replace_ (x / p) e l (r :: list)
 
                             else
-                                replace_ x e r (l :: list)
+                                replace_ ((x - p) / (1 - p)) e r (l :: list)
 
         Leaf leaf ->
             let
