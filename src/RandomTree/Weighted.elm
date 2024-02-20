@@ -1,5 +1,5 @@
-module RandomTree exposing
-    ( RandomTree, Weighted, WideFloat
+module RandomTree.Weighted exposing
+    ( Tree, Weighted, WideFloat
     , adjustWeight, adjustContent
     , singleton, fromList, fromPairs
     , insert, insertWithRelativeWeight, insertListWithRelativeWeight
@@ -13,7 +13,7 @@ module RandomTree exposing
 
 # Types
 
-@docs RandomTree, Weighted, WideFloat
+@docs Tree, Weighted, WideFloat
 
 
 # Operation around weighted datum
@@ -61,8 +61,8 @@ type alias WideFloat =
 
 type Node a
     = Branch
-        { l : RandomTree a
-        , r : RandomTree a
+        { l : Tree a
+        , r : Tree a
         }
     | Leaf a
 
@@ -76,11 +76,11 @@ type alias Content a =
 
 {-| Type that represents binary tree with weighted elements for random picking up.
 -}
-type RandomTree a
-    = RandomTree (Content a)
+type Tree a
+    = Tree (Content a)
 
 
-{-| Type alias that represents each weighted contents in `RandomTree`.
+{-| Type alias that represents each weighted contents in `Tree`.
 -}
 type alias Weighted a =
     { weight : WideFloat
@@ -88,24 +88,24 @@ type alias Weighted a =
     }
 
 
-{-| Returns a `RandomTree` that has only one element.
+{-| Returns a `Tree` that has only one element.
 -}
-singleton : Weighted a -> RandomTree a
+singleton : Weighted a -> Tree a
 singleton e =
-    RandomTree
+    Tree
         { c = 1
         , w = e.weight
         , n = Leaf e.content
         }
 
 
-{-| Returns a `RandomTree` that has all element in given list.
+{-| Returns a `Tree` that has all element in given list.
 -}
-fromList : Weighted a -> List (Weighted a) -> RandomTree a
+fromList : Weighted a -> List (Weighted a) -> Tree a
 fromList e t =
     let
         head =
-            RandomTree
+            Tree
                 { c = 1
                 , w = e.weight
                 , n = Leaf e.content
@@ -118,17 +118,17 @@ fromList e t =
 
 
 fromList_ :
-    RandomTree a
-    -> List (RandomTree a)
-    -> List (RandomTree a)
-    -> RandomTree a
+    Tree a
+    -> List (Tree a)
+    -> List (Tree a)
+    -> Tree a
 fromList_ current before after =
     case before of
         head1 :: head2 :: tail ->
             case current of
-                RandomTree c ->
+                Tree c ->
                     case head1 of
-                        RandomTree h1 ->
+                        Tree h1 ->
                             let
                                 newBranch =
                                     Branch
@@ -137,7 +137,7 @@ fromList_ current before after =
                                         }
 
                                 processed =
-                                    RandomTree
+                                    Tree
                                         { c = c.c + h1.c
                                         , w = add c.w h1.w
                                         , n = newBranch
@@ -147,9 +147,9 @@ fromList_ current before after =
 
         head1 :: [] ->
             case current of
-                RandomTree c ->
+                Tree c ->
                     case head1 of
-                        RandomTree h1 ->
+                        Tree h1 ->
                             let
                                 newBranch =
                                     Branch
@@ -158,7 +158,7 @@ fromList_ current before after =
                                         }
 
                                 processed =
-                                    RandomTree
+                                    Tree
                                         { c = c.c + h1.c
                                         , w = add c.w h1.w
                                         , n = newBranch
@@ -175,14 +175,14 @@ fromList_ current before after =
                     current
 
 
-{-| Creates `RandomTree` from list of tuples of a `Float` value corresponding to its weight as the first component, and a datum as the second component.
+{-| Creates `Tree` from list of tuples of a `Float` value corresponding to its weight as the first component, and a datum as the second component.
 the weighter it is, the higher probability it is chosen in.
 -}
-fromPairs : ( Float, a ) -> List ( Float, a ) -> RandomTree a
+fromPairs : ( Float, a ) -> List ( Float, a ) -> Tree a
 fromPairs ( hf, ha ) tail =
     let
         current =
-            RandomTree
+            Tree
                 { c = 1
                 , w =
                     WideFloat.create
@@ -195,7 +195,7 @@ fromPairs ( hf, ha ) tail =
         before =
             List.map
                 (\( f, a ) ->
-                    RandomTree
+                    Tree
                         { c = 1
                         , w =
                             WideFloat.create
@@ -210,18 +210,18 @@ fromPairs ( hf, ha ) tail =
     fromList_ current before []
 
 
-{-| Inserts a Weighted data to an already-existing `RandomTree`.
+{-| Inserts a Weighted data to an already-existing `Tree`.
 -}
-insert : Weighted a -> RandomTree a -> RandomTree a
-insert e (RandomTree t) =
+insert : Weighted a -> Tree a -> Tree a
+insert e (Tree t) =
     case t.n of
         Branch b ->
             case b.l of
-                RandomTree l ->
+                Tree l ->
                     case b.r of
-                        RandomTree r ->
+                        Tree r ->
                             if l.c <= r.c then
-                                RandomTree
+                                Tree
                                     { c = t.c + 1
                                     , w = add t.w e.weight
                                     , n =
@@ -232,7 +232,7 @@ insert e (RandomTree t) =
                                     }
 
                             else
-                                RandomTree
+                                Tree
                                     { c = t.c + 1
                                     , w = add t.w e.weight
                                     , n =
@@ -243,27 +243,27 @@ insert e (RandomTree t) =
                                     }
 
         Leaf _ ->
-            RandomTree
+            Tree
                 { c = 2
                 , w = add t.w e.weight
                 , n =
                     Branch
                         { l =
-                            RandomTree
+                            Tree
                                 { c = 1
                                 , w = e.weight
                                 , n = Leaf e.content
                                 }
-                        , r = RandomTree t
+                        , r = Tree t
                         }
                 }
 
 
-{-| Random generator that generates one of the elements conteined in `RandomTree` given as parameter.
+{-| Random generator that generates one of the elements conteined in `Tree` given as parameter.
 The time complexity is _O(log(N))_ where _N_ denotes the size of the tree.
 -}
-get : RandomTree a -> Random.Generator a
-get (RandomTree t) =
+get : Tree a -> Random.Generator a
+get (Tree t) =
     Random.float 0 1
         |> Random.map (\x -> get_ x t.n)
 
@@ -273,9 +273,9 @@ get_ x n =
     case n of
         Branch b ->
             case b.l of
-                RandomTree l ->
+                Tree l ->
                     case b.r of
-                        RandomTree r ->
+                        Tree r ->
                             let
                                 p =
                                     proportionOf
@@ -292,25 +292,25 @@ get_ x n =
             leaf
 
 
-{-| Random generator that generates one of the elements conteined in `RandomTree`, paired with the rest part of the tree.
-If the `RandomTree` has only one element, then `Nothing` is returned as the second component.
+{-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree.
+If the `Tree` has only one element, then `Nothing` is returned as the second component.
 The time complexity is _O(log(N))_ where _N_ denotes the size of the tree.
 -}
-take : RandomTree a -> Random.Generator ( Weighted a, Maybe (RandomTree a) )
-take (RandomTree t) =
+take : Tree a -> Random.Generator ( Weighted a, Maybe (Tree a) )
+take (Tree t) =
     Random.float 0 1
         |> Random.map
             (\x -> take_ x t [])
 
 
-take_ : Float -> Content a -> List (Content a) -> ( Weighted a, Maybe (RandomTree a) )
+take_ : Float -> Content a -> List (Content a) -> ( Weighted a, Maybe (Tree a) )
 take_ x t list =
     case t.n of
         Branch b ->
             case b.l of
-                RandomTree l ->
+                Tree l ->
                     case b.r of
-                        RandomTree r ->
+                        Tree r ->
                             let
                                 p =
                                     proportionOf
@@ -344,20 +344,20 @@ take_ x t list =
 
 {-| Random generator that replaces one weighted data from the tree and generates a pair consisting of the removed data and resultant tree.
 -}
-replace : Weighted a -> RandomTree a -> Random.Generator ( Weighted a, RandomTree a )
-replace e (RandomTree c) =
+replace : Weighted a -> Tree a -> Random.Generator ( Weighted a, Tree a )
+replace e (Tree c) =
     Random.float 0 1
         |> Random.map (\x -> replace_ x e c [])
 
 
-replace_ : Float -> Weighted a -> Content a -> List (Content a) -> ( Weighted a, RandomTree a )
+replace_ : Float -> Weighted a -> Content a -> List (Content a) -> ( Weighted a, Tree a )
 replace_ x e c list =
     case c.n of
         Branch b ->
             case b.l of
-                RandomTree l ->
+                Tree l ->
                     case b.r of
-                        RandomTree r ->
+                        Tree r ->
                             let
                                 p =
                                     proportionOf
@@ -390,23 +390,23 @@ replace_ x e c list =
 
 {-| Inserts an element into the tree. The first parameter denotes the relative weight(`1` means the whole weight of the original tree).
 -}
-insertWithRelativeWeight : Float -> a -> RandomTree a -> RandomTree a
-insertWithRelativeWeight f c (RandomTree t) =
+insertWithRelativeWeight : Float -> a -> Tree a -> Tree a
+insertWithRelativeWeight f c (Tree t) =
     insert
         { weight = WideFloat.multiplyFloat f t.w
         , content = c
         }
-        (RandomTree t)
+        (Tree t)
 
 
 {-| Inserts all elements of given list into the tree of second parameter. The first components of the tuple denotes the relative weight(`1` means the whole weight of the original tree).
 -}
-insertListWithRelativeWeight : List ( Float, a ) -> RandomTree a -> RandomTree a
-insertListWithRelativeWeight list (RandomTree t) =
-    insertListWithRelativeWeight_ t.w list (RandomTree t)
+insertListWithRelativeWeight : List ( Float, a ) -> Tree a -> Tree a
+insertListWithRelativeWeight list (Tree t) =
+    insertListWithRelativeWeight_ t.w list (Tree t)
 
 
-insertListWithRelativeWeight_ : WideFloat -> List ( Float, a ) -> RandomTree a -> RandomTree a
+insertListWithRelativeWeight_ : WideFloat -> List ( Float, a ) -> Tree a -> Tree a
 insertListWithRelativeWeight_ w list t =
     case list of
         ( f, c ) :: tail ->
@@ -425,22 +425,22 @@ insertListWithRelativeWeight_ w list t =
 
 {-| Returns how many elements the tree has.
 -}
-count : RandomTree a -> Int
-count (RandomTree t) =
+count : Tree a -> Int
+count (Tree t) =
     t.c
 
 
 {-| Returns the sum of weight of all the elements in the tree.
 -}
-totalWeight : RandomTree a -> WideFloat
-totalWeight (RandomTree t) =
+totalWeight : Tree a -> WideFloat
+totalWeight (Tree t) =
     t.w
 
 
 {-| Checks whether the tree of second parameter has the first element.
 -}
-member : a -> RandomTree a -> Bool
-member a (RandomTree r) =
+member : a -> Tree a -> Bool
+member a (Tree r) =
     case r.n of
         Leaf leaf ->
             a == leaf
@@ -451,11 +451,11 @@ member a (RandomTree r) =
 
 {-| Maps all the content of the tree, with the weights unchanged.
 -}
-map : (a -> b) -> RandomTree a -> RandomTree b
-map f (RandomTree r) =
+map : (a -> b) -> Tree a -> Tree b
+map f (Tree r) =
     case r.n of
         Leaf leaf ->
-            RandomTree
+            Tree
                 { c = 1
                 , w = r.w
                 , n =
@@ -463,7 +463,7 @@ map f (RandomTree r) =
                 }
 
         Branch b ->
-            RandomTree
+            Tree
                 { c = r.c
                 , w = r.w
                 , n =
@@ -476,12 +476,12 @@ map f (RandomTree r) =
 
 {-| Removes any number of elements which passes the test function given as the first parameter from the second parameter. The returned value is wrapped in `Maybe`.
 -}
-filter : (WideFloat -> a -> Bool) -> RandomTree a -> Maybe (RandomTree a)
-filter f (RandomTree r) =
+filter : (WideFloat -> a -> Bool) -> Tree a -> Maybe (Tree a)
+filter f (Tree r) =
     case r.n of
         Leaf leaf ->
             if f r.w leaf then
-                Just (RandomTree r)
+                Just (Tree r)
 
             else
                 Nothing
@@ -491,14 +491,14 @@ filter f (RandomTree r) =
                 Nothing ->
                     filter f b.r
 
-                (Just (RandomTree filteredLeft)) as fl ->
+                (Just (Tree filteredLeft)) as fl ->
                     case filter f b.r of
                         Nothing ->
                             fl
 
-                        Just (RandomTree filteredRight) ->
+                        Just (Tree filteredRight) ->
                             Just
-                                (RandomTree
+                                (Tree
                                     { c =
                                         filteredLeft.c
                                             + filteredRight.c
@@ -508,9 +508,9 @@ filter f (RandomTree r) =
                                     , n =
                                         Branch
                                             { l =
-                                                RandomTree filteredLeft
+                                                Tree filteredLeft
                                             , r =
-                                                RandomTree filteredRight
+                                                Tree filteredRight
                                             }
                                     }
                                 )
@@ -518,15 +518,15 @@ filter f (RandomTree r) =
 
 {-| Removes any number of elements which is the same as the first parameter from the second parameter. The returned value is wrapped in `Maybe`.
 -}
-delete : a -> RandomTree a -> Maybe (RandomTree a)
-delete a (RandomTree r) =
+delete : a -> Tree a -> Maybe (Tree a)
+delete a (Tree r) =
     case r.n of
         Leaf leaf ->
             if a == leaf then
                 Nothing
 
             else
-                Just (RandomTree r)
+                Just (Tree r)
 
         Branch b ->
             let
@@ -537,17 +537,17 @@ delete a (RandomTree r) =
                     delete a b.r
             in
             case mLeft of
-                Just (RandomTree left) ->
+                Just (Tree left) ->
                     case mRight of
-                        Just (RandomTree right) ->
+                        Just (Tree right) ->
                             Just
-                                (RandomTree
+                                (Tree
                                     { c = left.c + right.c
                                     , w = WideFloat.add left.w right.w
                                     , n =
                                         Branch
-                                            { l = RandomTree left
-                                            , r = RandomTree right
+                                            { l = Tree left
+                                            , r = Tree right
                                             }
                                     }
                                 )
@@ -582,7 +582,7 @@ adjustContent f e =
 -- inner functions
 
 
-reconstruct : Content a -> List (Content a) -> RandomTree a
+reconstruct : Content a -> List (Content a) -> Tree a
 reconstruct current list =
     case list of
         head :: tail ->
@@ -593,8 +593,8 @@ reconstruct current list =
                         , w = add current.w head.w
                         , n =
                             Branch
-                                { l = RandomTree current
-                                , r = RandomTree head
+                                { l = Tree current
+                                , r = Tree head
                                 }
                         }
                 in
@@ -604,9 +604,9 @@ reconstruct current list =
                 case head.n of
                     Branch b ->
                         case b.l of
-                            RandomTree l ->
+                            Tree l ->
                                 case b.r of
-                                    RandomTree r ->
+                                    Tree r ->
                                         let
                                             richer =
                                                 if l.c >= r.c then
@@ -628,15 +628,15 @@ reconstruct current list =
                                                     add current.w poorer.w
                                                 , n =
                                                     Branch
-                                                        { l = RandomTree current
-                                                        , r = RandomTree poorer
+                                                        { l = Tree current
+                                                        , r = Tree poorer
                                                         }
                                                 }
 
                                             newBranch =
                                                 Branch
-                                                    { l = RandomTree newLeftContent
-                                                    , r = RandomTree richer
+                                                    { l = Tree newLeftContent
+                                                    , r = Tree richer
                                                     }
 
                                             newC =
@@ -649,7 +649,7 @@ reconstruct current list =
 
                     Leaf _ ->
                         --impossible
-                        RandomTree current
+                        Tree current
 
         [] ->
-            RandomTree current
+            Tree current
