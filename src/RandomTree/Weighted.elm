@@ -11,6 +11,18 @@ module RandomTree.Weighted exposing
 {-| This module provides data structure that allows random picking up from a collection of data in _O(log(N))_ time. You can set weight of each element with `WideFloat` from `kudzu-forest/elm-wide-float` package.
 
 
+## Note
+
+`Tree` in this module
+
+  - is not allowed to be empty, so
+      - the return value of function that reduce the number of element(`take`, `delete`, and `filter`) all return `Maybe (Tree a)` just in case all the elements are deleted.
+      - You have to pass at least one element at the creation, so function like `fromList` takes one heading element and tailing list.(similar with `Random.uniform` or `Random.weighted`.)
+  - can not have zero-or-negative-weighted elements. So if you give ones, the weight is automatically converted to `1`. This may be an error prone, but otherwise all things must be wrapped in `Maybe`.
+  - is not a search tree(the elements are not ordered), so the time complexity of `member` and `delete` is _O(N)_.
+  - may be unbalanced when `delete` or `filter` is called, so when I say "The time complexity is _O(log(N))_", _N_ denotes the maximal size in the history of the tree so far.
+
+
 # Types
 
 @docs Tree, Weighted, WideFloat
@@ -41,7 +53,7 @@ module RandomTree.Weighted exposing
 @docs get, take, replace
 
 
-# Query
+# Status Checking
 
 @docs count, totalWeight
 
@@ -53,7 +65,7 @@ import WideFloat exposing (add, proportionOf)
 
 
 {-| Type that represent floating point number with wider range than `Float` in core package. This is introduced for preventing overflow of exponentially changing value.
-If you need to directly manipulate values of `WideFloat`, please hit `elm install kudzu-forest/elm-wide-float` in your terminal.
+Please hit `elm install kudzu-forest/elm-wide-float` in your terminal.
 -}
 type alias WideFloat =
     WideFloat.WideFloat
@@ -74,32 +86,41 @@ type alias Content a =
     }
 
 
-{-| Type that represents binary tree with weighted elements for random picking up.
+{-| Type that represents binary tree with weighted elements subjected to random picking up.
 -}
 type Tree a
     = Tree (Content a)
 
 
-{-| Type alias that represents each weighted contents in `Tree`.
+{-| Type alias that represents each weighted contents in `Tree`. The probability of being chosen is proportional to its weight.
+The weight is represented with `WideFloat.WideFloat` type in `kudzu-forest/elm-wide-float` package.
 -}
 type alias Weighted a =
-    { weight : WideFloat
+    { weight : WideFloat.WideFloat
     , content : a
     }
 
 
-{-| Returns a `Tree` that has only one element.
+{-| Returns a `Tree` that has only one element. Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
 -}
 singleton : Weighted a -> Tree a
 singleton e =
-    Tree
-        { c = 1
-        , w = e.weight
-        , n = Leaf e.content
-        }
+    if WideFloat.isLargerThan WideFloat.zero e.weight then
+        Tree
+            { c = 1
+            , w = e.weight
+            , n = Leaf e.content
+            }
+
+    else
+        Tree
+            { c = 1
+            , w = WideFloat.one
+            , n = Leaf e.content
+            }
 
 
-{-| Returns a `Tree` that has all element in given list.
+{-| Returns a `Tree` that has all element in given list.Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
 -}
 fromList : Weighted a -> List (Weighted a) -> Tree a
 fromList e t =
@@ -175,45 +196,39 @@ fromList_ current before after =
                     current
 
 
-{-| Creates `Tree` from list of tuples of a `Float` value corresponding to its weight as the first component, and a datum as the second component.
-the weighter it is, the higher probability it is chosen in.
+{-| Creates `Tree` from list of tuples of a `Float` value corresponding to its weight as the first component, and a datum as the second component. Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
 -}
 fromPairs : ( Float, a ) -> List ( Float, a ) -> Tree a
 fromPairs ( hf, ha ) tail =
     let
         current =
-            Tree
-                { c = 1
-                , w =
-                    WideFloat.create
-                        { base2toThe1024exponent = 0
-                        , significand = hf
-                        }
-                , n = Leaf ha
+            singleton
+                { weight = WideFloat.fromFloat hf
+                , content = ha
                 }
 
         before =
-            List.map
-                (\( f, a ) ->
-                    Tree
-                        { c = 1
-                        , w =
-                            WideFloat.create
-                                { base2toThe1024exponent = 0
-                                , significand = f
-                                }
-                        , n = Leaf a
+            tail
+                |> List.map
+                    (\( f, a ) ->
+                        { weight = WideFloat.fromFloat f
+                        , content = a
                         }
-                )
-                tail
+                    )
+                |> List.map singleton
     in
     fromList_ current before []
 
 
-{-| Inserts a Weighted data to an already-existing `Tree`.
+{-| Inserts a Weighted data to an already-existing `Tree`. Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
 -}
 insert : Weighted a -> Tree a -> Tree a
-insert e (Tree t) =
+insert e t =
+    insert_ (singleton e) t
+
+
+insert_ : Tree a -> Tree a -> Tree a
+insert_ (Tree a) (Tree t) =
     case t.n of
         Branch b ->
             case b.l of
@@ -223,10 +238,10 @@ insert e (Tree t) =
                             if l.c <= r.c then
                                 Tree
                                     { c = t.c + 1
-                                    , w = add t.w e.weight
+                                    , w = add t.w a.w
                                     , n =
                                         Branch
-                                            { l = insert e b.l
+                                            { l = insert_ (Tree a) b.l
                                             , r = b.r
                                             }
                                     }
@@ -234,33 +249,27 @@ insert e (Tree t) =
                             else
                                 Tree
                                     { c = t.c + 1
-                                    , w = add t.w e.weight
+                                    , w = add t.w a.w
                                     , n =
                                         Branch
                                             { l = b.l
-                                            , r = insert e b.r
+                                            , r = insert_ (Tree a) b.r
                                             }
                                     }
 
         Leaf _ ->
             Tree
                 { c = 2
-                , w = add t.w e.weight
+                , w = add t.w a.w
                 , n =
                     Branch
-                        { l =
-                            Tree
-                                { c = 1
-                                , w = e.weight
-                                , n = Leaf e.content
-                                }
+                        { l = Tree a
                         , r = Tree t
                         }
                 }
 
 
-{-| Random generator that generates one of the elements conteined in `Tree` given as parameter.
-The time complexity is _O(log(N))_ where _N_ denotes the size of the tree.
+{-| Random generator that generates one of the elements conteined in `Tree` given as parameter. The probability for each elements to be chosen is proportional to its weight. The time complexity is _O(log(N))_.
 -}
 get : Tree a -> Random.Generator a
 get (Tree t) =
@@ -294,7 +303,7 @@ get_ x n =
 
 {-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree.
 If the `Tree` has only one element, then `Nothing` is returned as the second component.
-The time complexity is _O(log(N))_ where _N_ denotes the size of the tree.
+The time complexity is _O(log(N))_.
 -}
 take : Tree a -> Random.Generator ( Weighted a, Maybe (Tree a) )
 take (Tree t) =
@@ -342,7 +351,7 @@ take_ x t list =
                     ( e, Nothing )
 
 
-{-| Random generator that replaces one weighted data from the tree and generates a pair consisting of the removed data and resultant tree.
+{-| Random generator that replaces one weighted data from the tree and generates a pair consisting of the removed data and resultant tree. The time complexity is _O(log(N))_
 -}
 replace : Weighted a -> Tree a -> Random.Generator ( Weighted a, Tree a )
 replace e (Tree c) =
@@ -388,7 +397,7 @@ replace_ x e c list =
             ( returnedWeighted, returnedTree )
 
 
-{-| Inserts an element into the tree. The first parameter denotes the relative weight(`1` means the whole weight of the original tree).
+{-| Inserts an element into the tree. The first parameter denotes the relative weight(`1` means the whole weight of the original tree). The time complexity is _O(log(N))_.
 -}
 insertWithRelativeWeight : Float -> a -> Tree a -> Tree a
 insertWithRelativeWeight f c (Tree t) =
@@ -423,21 +432,21 @@ insertListWithRelativeWeight_ w list t =
             t
 
 
-{-| Returns how many elements the tree has.
+{-| Returns how many elements the tree has. The time complexity is _O(1)_
 -}
 count : Tree a -> Int
 count (Tree t) =
     t.c
 
 
-{-| Returns the sum of weight of all the elements in the tree.
+{-| Returns the sum of weight of all the elements in the tree. The time complexity is _O(1)_
 -}
 totalWeight : Tree a -> WideFloat
 totalWeight (Tree t) =
     t.w
 
 
-{-| Checks whether the tree of second parameter has the first element.
+{-| Checks whether the tree of second parameter has the first element. The time complexity is _O(N)_.
 -}
 member : a -> Tree a -> Bool
 member a (Tree r) =
@@ -516,7 +525,7 @@ filter f (Tree r) =
                                 )
 
 
-{-| Removes any number of elements which is the same as the first parameter from the second parameter. The returned value is wrapped in `Maybe`.
+{-| Removes any number of elements which is the same as the first parameter from the second parameter. The returned value is wrapped in `Maybe`. The time complexity is _O(N)_.
 -}
 delete : a -> Tree a -> Maybe (Tree a)
 delete a (Tree r) =

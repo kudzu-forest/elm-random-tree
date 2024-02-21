@@ -10,6 +10,17 @@ module RandomTree.Uniform exposing
 {-| This module provides data structure subjected to random choice of elements in uniform probability.
 
 
+## Note
+
+`Tree` in this module
+
+  - is not allowed to be empty, so
+      - the return value of function that reduce the number of element(`take`, `delete`, and `filter`) all return `Maybe (Tree a)` just in case all the elements are deleted.
+      - You have to pass at least one element at the creation, so function like `fromList` takes one heading element and tailing list.(similar with `Random.uniform` or `Random.weighted`.)
+  - is not a search tree(the elements are not ordered), so the time complexity of `member` and `delete` is _O(N)_.
+  - may be unbalanced when `delete` or `filter` is called, so when I say "The time complexity is _O(log(N))_", _N_ denotes the maximal size in the history of the tree so far.
+
+
 # Types
 
 @docs Tree
@@ -59,7 +70,7 @@ type alias Content a =
     }
 
 
-{-| Type that represents binary tree with weighted elements for random picking up.
+{-| Type that represents binary tree with elements subjected to random picking up in uniform probabilities.
 -}
 type Tree a
     = Tree (Content a)
@@ -191,7 +202,7 @@ insert e (Tree t) =
 
 
 {-| Random generator that generates one of the elements conteined in `Tree` given as parameter.
-The time complexity is _O(log(N))_ where _N_ denotes the size of the tree.
+The time complexity is _O(log(N))_.
 -}
 get : Tree a -> Random.Generator a
 get (Tree t) =
@@ -222,9 +233,7 @@ get_ x n =
             leaf
 
 
-{-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree.
-If the `Tree` has only one element, then `Nothing` is returned as the second component.
-The time complexity is _O(log(N))_ where _N_ denotes the size of the tree.
+{-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree. The time complexity is _O(log(N))_.
 -}
 take : Tree a -> Random.Generator ( a, Maybe (Tree a) )
 take (Tree t) =
@@ -267,7 +276,7 @@ take_ x t list =
                     ( e, Nothing )
 
 
-{-| Random generator that replaces one weighted data from the tree and generates a pair consisting of the removed data and resultant tree.
+{-| Random generator that replaces one data from the tree and generates a pair consisting of the removed data and resultant tree.
 -}
 replace : a -> Tree a -> Random.Generator ( a, Tree a )
 replace e (Tree c) =
@@ -304,7 +313,7 @@ replace_ x e c list =
             ( leaf, returnedTree )
 
 
-{-| Inserts all elements of given list into the tree of second parameter. The first components of the tuple denotes the relative weight(`1` means the whole weight of the original tree).
+{-| Inserts all elements of given list into the tree.
 -}
 insertList : List a -> Tree a -> Tree a
 insertList list t =
@@ -318,7 +327,7 @@ count (Tree t) =
     t.c
 
 
-{-| Checks whether the tree of second parameter has the first element.
+{-| Checks whether the tree has the element. The time complexity is _O(N)_.
 -}
 member : a -> Tree a -> Bool
 member a (Tree r) =
@@ -353,7 +362,7 @@ map f (Tree r) =
                 }
 
 
-{-| Removes any number of elements which fails to passes the test function given as the first parameter. The returned value is wrapped in `Maybe`.
+{-| Removes any number of elements which fails to passes the test function given as the first parameter.
 -}
 filter : (a -> Bool) -> Tree a -> Maybe (Tree a)
 filter f (Tree r) =
@@ -392,7 +401,7 @@ filter f (Tree r) =
                                 )
 
 
-{-| Removes any number of elements which is the same as the first parameter from the second parameter. The returned value is wrapped in `Maybe`.
+{-| Removes any number of elements which is the same as the first parameter from the second parameter.
 -}
 delete : a -> Tree a -> Maybe (Tree a)
 delete a =
