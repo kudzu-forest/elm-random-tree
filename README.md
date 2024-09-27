@@ -5,7 +5,6 @@ This package is for those who feel somehow unconfortable to apply `Random.unifor
 This package offers new data type `RandomTree.Uniform.Tree` and `RandomTree.Weighted.Tree` to deal with huge set of data within log-scaled time. 
 
 Please hit
-`elm install elm/elm-random`,
-`elm install kudzu-forest/elm-wide-float` and
+`elm install elm/elm-random` and
 `elm install kudzu-forest/elm-random-tree`
 in your terminal.
