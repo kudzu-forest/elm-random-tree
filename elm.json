@@ -3,10 +3,11 @@
     "name": "kudzu-forest/elm-random-tree",
     "summary": "tree structure that allows fast random picking up",
     "license": "MIT",
-    "version": "2.0.1",
+    "version": "3.0.0",
     "exposed-modules": [
         "RandomTree.Uniform",
-        "RandomTree.Weighted"
+        "RandomTree.Weighted",
+        "RandomTree.WideFloatWeighted"
     ],
     "elm-version": "0.19.1 <= v < 0.20.0",
     "dependencies": {

@@ -1,664 +1,450 @@
 module RandomTree.Weighted exposing
-    ( Tree, Weighted, WideFloat
-    , adjustWeight, adjustContent
-    , singleton, fromList, fromPairs
-    , insert, insertWithRelativeWeight, insertListWithRelativeWeight
-    , delete, map, filter
-    , get, take, replace
-    , count, totalWeight
+    ( Tree
+    , getWeight
+    , singleton, fromList
+    , get, pick, take, drop
+    , map, mapContent, mapWeight, adjustTotalWeightTo
+    , insert, insertList, merge
+    , remove, filter
+    , toList
     )
 
-{-| This module provides data structure that allows random picking up from a collection of data in _O(log(N))_ time. You can set weight of each element with `WideFloat` from `kudzu-forest/elm-wide-float` package.
+{-| This module provides a data structure that allows for random selection from a collection of data in amortized _O(log(N))_ time. You can assign a weight to each element as a `Float` value.
 
 
 ## Note
 
-`Tree` in this module
+The `Tree` in this module:
 
-  - is not allowed to be empty, so
-      - the return value of function that reduce the number of element(`take`, `delete`, and `filter`) all return `Maybe (Tree a)` just in case all the elements are deleted.
-      - You have to pass at least one element at the creation, so function like `fromList` takes one heading element and tailing list.(similar with `Random.uniform` or `Random.weighted`.)
-  - can not have zero-or-negative-weighted elements. So if you give ones, the weight is automatically converted to `1`. This may be an error prone, but otherwise all things must be wrapped in `Maybe`.
-  - is not a search tree(the elements are not ordered), so the time complexity of `member` and `delete` is _O(N)_.
-  - may be unbalanced when `delete` or `filter` is called, so when I say "The time complexity is _O(log(N))_", _N_ denotes the maximal size in the history of the tree so far.
-
-
-# Types
-
-@docs Tree, Weighted, WideFloat
+  - cannot be empty. Consequently:
+      - Functions that reduce the number of elements (`pick`, `take`, `drop`, `remove`, and `filter`) return `Maybe (Tree a)` in the event that all elements are deleted.
+      - At least one element must be provided during creation, so `fromList` requires a head element and a tail list (similar to `Random.uniform` or `Random.weighted`).
+  - cannot contain elements with negative weights. If such weights are provided, they are automatically converted to their absolute values. While this may lead to errors, wrapping all operations in `Maybe` would be more cumbersome.
+  - is not a search tree (the elements are not ordered), resulting in a time complexity of _O(N)_ for `member` and `remove`.
 
 
-# Operation around weighted datum
+# Type
 
-@docs adjustWeight, adjustContent
+@docs Tree
+
+
+# Query
+
+@docs getWeight
 
 
 # Creation
 
-@docs singleton, fromList, fromPairs
+@docs singleton, fromList
 
 
-# Insertion
+# Random Operations
 
-@docs insert, insertWithRelativeWeight, insertListWithRelativeWeight
+These functions all return `Random.Generator`.
+
+@docs get, pick, take, drop
 
 
 # Modification
 
-@docs delete, map, filter
+@docs map, mapContent, mapWeight, adjustTotalWeightTo
 
 
-# Random Pick Up
+# Addition
 
-@docs get, take, replace
+@docs insert, insertList, merge
 
 
-# Status Checking
+# Deletion
 
-@docs count, totalWeight
+These functions return `Maybe` if all elements are removed.
+
+@docs remove, filter
+
+
+# Destructure
+
+@docs toList
 
 -}
 
-import Bitwise
 import Random
-import WideFloat exposing (add, proportionOf)
 
 
-{-| Type that represent floating point number with wider range than `Float` in core package. This is introduced for preventing overflow of exponentially changing value.
-Please hit `elm install kudzu-forest/elm-wide-float` in your terminal.
--}
-type alias WideFloat =
-    WideFloat.WideFloat
-
-
-type Node a
-    = Branch
-        { l : Tree a
-        , r : Tree a
-        }
-    | Leaf a
-
-
-type alias Content a =
-    { c : Int
-    , w : WideFloat
-    , n : Node a
-    }
-
-
-{-| Type that represents binary tree with weighted elements subjected to random picking up.
+{-| `RandomTree.Weighted.Tree` represents non-empty collection of randomly chosen values.
 -}
 type Tree a
-    = Tree (Content a)
-
-
-{-| Type alias that represents each weighted contents in `Tree`. The probability of being chosen is proportional to its weight.
-The weight is represented with `WideFloat.WideFloat` type in `kudzu-forest/elm-wide-float` package.
--}
-type alias Weighted a =
-    { weight : WideFloat.WideFloat
-    , content : a
-    }
-
-
-{-| Returns a `Tree` that has only one element. Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
--}
-singleton : Weighted a -> Tree a
-singleton e =
-    if WideFloat.isLargerThan WideFloat.zero e.weight then
-        Tree
-            { c = 1
-            , w = e.weight
-            , n = Leaf e.content
-            }
-
-    else
-        Tree
-            { c = 1
-            , w = WideFloat.one
-            , n = Leaf e.content
-            }
-
-
-{-| Returns a `Tree` that has all element in given list.Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
--}
-fromList : Weighted a -> List (Weighted a) -> Tree a
-fromList e t =
-    let
-        head =
-            Tree
-                { c = 1
-                , w = e.weight
-                , n = Leaf e.content
-                }
-
-        tail =
-            List.map singleton t
-    in
-    fromList_ head tail []
-
-
-fromList_ :
-    Tree a
-    -> List (Tree a)
-    -> List (Tree a)
-    -> Tree a
-fromList_ current before after =
-    case before of
-        head1 :: head2 :: tail ->
-            case current of
-                Tree c ->
-                    case head1 of
-                        Tree h1 ->
-                            let
-                                newBranch =
-                                    Branch
-                                        { l = current
-                                        , r = head1
-                                        }
-
-                                processed =
-                                    Tree
-                                        { c = c.c + h1.c
-                                        , w = add c.w h1.w
-                                        , n = newBranch
-                                        }
-                            in
-                            fromList_ head2 tail (processed :: after)
-
-        head1 :: [] ->
-            case current of
-                Tree c ->
-                    case head1 of
-                        Tree h1 ->
-                            let
-                                newBranch =
-                                    Branch
-                                        { l = current
-                                        , r = head1
-                                        }
-
-                                processed =
-                                    Tree
-                                        { c = c.c + h1.c
-                                        , w = add c.w h1.w
-                                        , n = newBranch
-                                        }
-                            in
-                            fromList_ processed after []
-
-        [] ->
-            case after of
-                _ :: _ ->
-                    fromList_ current after []
-
-                [] ->
-                    current
-
-
-{-| Creates `Tree` from list of tuples of a `Float` value corresponding to its weight as the first component, and a datum as the second component. Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
--}
-fromPairs : ( Float, a ) -> List ( Float, a ) -> Tree a
-fromPairs ( hf, ha ) tail =
-    let
-        current =
-            singleton
-                { weight = WideFloat.fromFloat hf
-                , content = ha
-                }
-
-        before =
-            tail
-                |> List.map
-                    (\( f, a ) ->
-                        { weight = WideFloat.fromFloat f
-                        , content = a
-                        }
-                    )
-                |> List.map singleton
-    in
-    fromList_ current before []
-
-
-{-| Inserts a Weighted data to an already-existing `Tree`. Never give this function a negetive-or-zero-weighted element.(If the weight is negative or zero, the weight is automatically converted to 1.)
--}
-insert : Weighted a -> Tree a -> Tree a
-insert e t =
-    insert_ (singleton e) t
-
-
-insert_ : Tree a -> Tree a -> Tree a
-insert_ (Tree a) (Tree t) =
-    case t.n of
-        Branch b ->
-            case b.l of
-                Tree l ->
-                    case b.r of
-                        Tree r ->
-                            if l.c <= r.c then
-                                Tree
-                                    { c = t.c + 1
-                                    , w = add t.w a.w
-                                    , n =
-                                        Branch
-                                            { l = insert_ (Tree a) b.l
-                                            , r = b.r
-                                            }
-                                    }
-
-                            else
-                                Tree
-                                    { c = t.c + 1
-                                    , w = add t.w a.w
-                                    , n =
-                                        Branch
-                                            { l = b.l
-                                            , r = insert_ (Tree a) b.r
-                                            }
-                                    }
-
-        Leaf _ ->
-            Tree
-                { c = 2
-                , w = add t.w a.w
-                , n =
-                    Branch
-                        { l = Tree a
-                        , r = Tree t
-                        }
-                }
-
-
-{-| Random generator that generates one of the elements conteined in `Tree` given as parameter. The probability for each elements to be chosen is proportional to its weight. The time complexity is _O(log(N))_.
--}
-get : Tree a -> Random.Generator a
-get (Tree t) =
-    Random.float 0 1
-        |> Random.map (\x -> get_ x t.n)
-
-
-get_ : Float -> Node a -> a
-get_ x n =
-    case n of
-        Branch b ->
-            case b.l of
-                Tree l ->
-                    case b.r of
-                        Tree r ->
-                            let
-                                p =
-                                    proportionOf
-                                        l.w
-                                        r.w
-                            in
-                            if x < p then
-                                get_ (x / p) l.n
-
-                            else
-                                get_ ((x - p) / (1 - p)) r.n
-
-        Leaf leaf ->
-            leaf
-
-
-{-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree.
-If the `Tree` has only one element, then `Nothing` is returned as the second component.
-The time complexity is _O(log(N))_.
--}
-take : Tree a -> Random.Generator ( Weighted a, Maybe (Tree a) )
-take (Tree t) =
-    Random.float 0 1
-        |> Random.map
-            (\x -> take_ x t [])
-
-
-take_ : Float -> Content a -> List (Content a) -> ( Weighted a, Maybe (Tree a) )
-take_ x t list =
-    case t.n of
-        Branch b ->
-            case b.l of
-                Tree l ->
-                    case b.r of
-                        Tree r ->
-                            let
-                                p =
-                                    proportionOf
-                                        l.w
-                                        r.w
-                            in
-                            if x < p then
-                                take_ (x / p) l (r :: list)
-
-                            else
-                                take_ ((x - p) / (1 - p)) r (l :: list)
-
-        Leaf leaf ->
-            let
-                e =
-                    { weight = t.w
-                    , content = leaf
-                    }
-            in
-            case list of
-                head :: tail ->
-                    let
-                        tree =
-                            reconstruct head tail
-                    in
-                    ( e, Just tree )
-
-                [] ->
-                    ( e, Nothing )
-
-
-{-| Random generator that replaces one weighted data from the tree and generates a pair consisting of the removed data and resultant tree. The time complexity is _O(log(N))_
--}
-replace : Weighted a -> Tree a -> Random.Generator ( Weighted a, Tree a )
-replace e (Tree c) =
-    Random.float 0 1
-        |> Random.map (\x -> replace_ x e c [])
-
-
-replace_ : Float -> Weighted a -> Content a -> List (Content a) -> ( Weighted a, Tree a )
-replace_ x e c list =
-    case c.n of
-        Branch b ->
-            case b.l of
-                Tree l ->
-                    case b.r of
-                        Tree r ->
-                            let
-                                p =
-                                    proportionOf
-                                        l.w
-                                        r.w
-                            in
-                            if x < p then
-                                replace_ (x / p) e l (r :: list)
-
-                            else
-                                replace_ ((x - p) / (1 - p)) e r (l :: list)
-
-        Leaf leaf ->
-            let
-                returnedWeighted =
-                    { weight = c.w
-                    , content = leaf
-                    }
-
-                returnedTree =
-                    reconstruct
-                        { c = 1
-                        , w = e.weight
-                        , n = Leaf e.content
-                        }
-                        list
-            in
-            ( returnedWeighted, returnedTree )
-
-
-{-| Inserts an element into the tree. The first parameter denotes the relative weight(`1` means the whole weight of the original tree). The time complexity is _O(log(N))_.
--}
-insertWithRelativeWeight : Float -> a -> Tree a -> Tree a
-insertWithRelativeWeight f c (Tree t) =
-    insert
-        { weight = WideFloat.multiplyFloat f t.w
-        , content = c
+    = Branch
+        { left : Tree a
+        , right : Tree a
+        , weight : Float
         }
-        (Tree t)
-
-
-{-| Inserts all elements of given list into the tree of second parameter. The first components of the tuple denotes the relative weight(`1` means the whole weight of the original tree).
--}
-insertListWithRelativeWeight : List ( Float, a ) -> Tree a -> Tree a
-insertListWithRelativeWeight list (Tree t) =
-    insertListWithRelativeWeight_ t.w list (Tree t)
-
-
-insertListWithRelativeWeight_ : WideFloat -> List ( Float, a ) -> Tree a -> Tree a
-insertListWithRelativeWeight_ w list t =
-    case list of
-        ( f, c ) :: tail ->
-            insertListWithRelativeWeight_ w
-                tail
-                (insert
-                    { weight = WideFloat.multiplyFloat f w
-                    , content = c
-                    }
-                    t
-                )
-
-        [] ->
-            t
-
-
-{-| Returns how many elements the tree has. The time complexity is _O(1)_
--}
-count : Tree a -> Int
-count (Tree t) =
-    t.c
-
-
-{-| Returns the sum of weight of all the elements in the tree. The time complexity is _O(1)_
--}
-totalWeight : Tree a -> WideFloat
-totalWeight (Tree t) =
-    t.w
-
-
-{-| Checks whether the tree of second parameter has the first element. The time complexity is _O(N)_.
--}
-member : a -> Tree a -> Bool
-member a (Tree r) =
-    case r.n of
-        Leaf leaf ->
-            a == leaf
-
-        Branch b ->
-            member a b.l || member a b.r
-
-
-{-| Maps all the content of the tree, with the weights unchanged.
--}
-map : (a -> b) -> Tree a -> Tree b
-map f (Tree r) =
-    case r.n of
-        Leaf leaf ->
-            Tree
-                { c = 1
-                , w = r.w
-                , n =
-                    Leaf (f leaf)
-                }
-
-        Branch b ->
-            Tree
-                { c = r.c
-                , w = r.w
-                , n =
-                    Branch
-                        { l = map f b.l
-                        , r = map f b.r
-                        }
-                }
-
-
-{-| Removes any number of elements which passes the test function given as the first parameter from the second parameter. The returned value is wrapped in `Maybe`.
--}
-filter : (WideFloat -> a -> Bool) -> Tree a -> Maybe (Tree a)
-filter f (Tree r) =
-    case r.n of
-        Leaf leaf ->
-            if f r.w leaf then
-                Just (Tree r)
-
-            else
-                Nothing
-
-        Branch b ->
-            case filter f b.l of
-                Nothing ->
-                    filter f b.r
-
-                (Just (Tree filteredLeft)) as fl ->
-                    case filter f b.r of
-                        Nothing ->
-                            fl
-
-                        Just (Tree filteredRight) ->
-                            Just
-                                (Tree
-                                    { c =
-                                        filteredLeft.c
-                                            + filteredRight.c
-                                    , w =
-                                        add filteredLeft.w
-                                            filteredRight.w
-                                    , n =
-                                        Branch
-                                            { l =
-                                                Tree filteredLeft
-                                            , r =
-                                                Tree filteredRight
-                                            }
-                                    }
-                                )
-
-
-{-| Removes any number of elements which is the same as the first parameter from the second parameter. The returned value is wrapped in `Maybe`. The time complexity is _O(N)_.
--}
-delete : a -> Tree a -> Maybe (Tree a)
-delete a (Tree r) =
-    case r.n of
-        Leaf leaf ->
-            if a == leaf then
-                Nothing
-
-            else
-                Just (Tree r)
-
-        Branch b ->
-            let
-                mLeft =
-                    delete a b.l
-
-                mRight =
-                    delete a b.r
-            in
-            case mLeft of
-                Just (Tree left) ->
-                    case mRight of
-                        Just (Tree right) ->
-                            Just
-                                (Tree
-                                    { c = left.c + right.c
-                                    , w = WideFloat.add left.w right.w
-                                    , n =
-                                        Branch
-                                            { l = Tree left
-                                            , r = Tree right
-                                            }
-                                    }
-                                )
-
-                        Nothing ->
-                            mLeft
-
-                Nothing ->
-                    mRight
-
-
-{-| Returns weighted datum whose weight is multiplied with the given `Float`.
--}
-adjustWeight : Float -> Weighted a -> Weighted a
-adjustWeight f e =
-    { weight =
-        WideFloat.multiplyFloat f e.weight
-    , content = e.content
-    }
-
-
-{-| Maps content in `Element`.
--}
-adjustContent : (a -> b) -> Weighted a -> Weighted b
-adjustContent f e =
-    { weight = e.weight
-    , content = f e.content
-    }
+    | Leaf
+        { content : a
+        , weight : Float
+        }
 
 
 
 -- inner functions
 
 
-reconstruct : Content a -> List (Content a) -> Tree a
-reconstruct current list =
-    case list of
-        head :: tail ->
-            if Bitwise.shiftLeftBy 1 current.c - head.c > 0 then
-                let
-                    newC =
-                        { c = current.c + head.c
-                        , w = add current.w head.w
-                        , n =
-                            Branch
-                                { l = Tree current
-                                , r = Tree head
-                                }
-                        }
-                in
-                reconstruct newC tail
+{-| Returns the weight of the specified `RandomTree.Weighted.Tree`.
+-}
+getWeight : Tree a -> Float
+getWeight t =
+    case t of
+        Branch record ->
+            record.weight
+
+        Leaf record ->
+            record.weight
+
+
+reduce : ({ content : a, weight : Float } -> b) -> (b -> b -> b) -> Tree a -> b
+reduce processLeaf processBranch tree =
+    case tree of
+        Leaf r ->
+            processLeaf r
+
+        Branch { left, right } ->
+            processBranch
+                (reduce processLeaf processBranch left)
+                (reduce processLeaf processBranch right)
+
+
+{-| Creates `RandomTree.Weighted.Tree` from a single element and its associated weight.
+-}
+singleton : ( Float, a ) -> Tree a
+singleton ( w, c ) =
+    Leaf { content = c, weight = abs w }
+
+
+{-| Inserts a weighted element into the `RandomTree.Weighted.Tree`, adjusting the structure as needed.
+-}
+insert : ( Float, a ) -> Tree a -> Tree a
+insert (( w, c ) as pair) t =
+    case t of
+        Branch { left, right, weight } ->
+            let
+                newWeight =
+                    weight + abs w
+            in
+            if getWeight left < getWeight right then
+                Branch
+                    { left = insert pair left
+                    , right = right
+                    , weight = newWeight
+                    }
 
             else
-                case head.n of
-                    Branch b ->
-                        case b.l of
-                            Tree l ->
-                                case b.r of
-                                    Tree r ->
-                                        let
-                                            richer =
-                                                if l.c >= r.c then
-                                                    l
+                Branch
+                    { left = left
+                    , right = insert pair right
+                    , weight = newWeight
+                    }
 
-                                                else
-                                                    r
+        Leaf { content, weight } ->
+            Branch
+                { left = t
+                , right =
+                    Leaf { content = c, weight = w }
+                , weight = weight + abs w
+                }
 
-                                            poorer =
-                                                if l.c >= r.c then
-                                                    r
 
-                                                else
-                                                    l
+{-| Inserts all weighted elements from the provided list into the `RandomTree.Weighted.Tree`.
+-}
+insertList : List ( Float, a ) -> Tree a -> Tree a
+insertList l t =
+    List.foldl insert t l
 
-                                            newLeftContent =
-                                                { c = current.c + poorer.c
-                                                , w =
-                                                    add current.w poorer.w
-                                                , n =
-                                                    Branch
-                                                        { l = Tree current
-                                                        , r = Tree poorer
-                                                        }
-                                                }
 
-                                            newBranch =
-                                                Branch
-                                                    { l = Tree newLeftContent
-                                                    , r = Tree richer
-                                                    }
+{-| Creates a `RandomTree.Weighted.Tree` from a single element and a list of additional elements. This ensures that the tree is non-empty.
+-}
+fromList : ( Float, a ) -> List ( Float, a ) -> Tree a
+fromList head tail =
+    List.foldl insert (singleton head) tail
 
-                                            newC =
-                                                { c = current.c + head.c
-                                                , w = add newLeftContent.w richer.w
-                                                , n = newBranch
-                                                }
-                                        in
-                                        reconstruct newC tail
 
-                    Leaf _ ->
-                        --impossible
-                        Tree current
+{-| Converts a `RandomTree.Weighted.Tree` into a list of tuples containing the weights and their corresponding contents.
+-}
+toList : Tree a -> List ( Float, a )
+toList t =
+    toListHelp t [] []
 
-        [] ->
-            Tree current
+
+toListHelp : Tree a -> List (Tree a) -> List ( Float, a ) -> List ( Float, a )
+toListHelp t l output =
+    case t of
+        Leaf { content, weight } ->
+            let
+                newOutput =
+                    ( weight, content ) :: output
+            in
+            case l of
+                [] ->
+                    newOutput
+
+                head :: tail ->
+                    toListHelp head tail newOutput
+
+        Branch { left, right } ->
+            toListHelp left (right :: l) output
+
+
+{-| Merges two `RandomTree.Weighted.Tree` instances into a single tree, preserving weights of each elements.
+-}
+merge : Tree a -> Tree a -> Tree a
+merge t1 t2 =
+    insertList (toList t1) t2
+
+
+{-| Returns a `Random.Generator` that produces a tuple containing a random content from the tree and its associated weight.
+-}
+get : Tree a -> Random.Generator ( Float, a )
+get t =
+    Random.float 0 (getWeight t)
+        |> Random.map (\x -> pickHelp x t [])
+        |> Random.map Tuple.first
+
+
+{-| Returns a `Random.Generator` that produces a tuple containing a randomly selected weighted content from the tree and a `Maybe` value representing the modified tree with that content removed.
+-}
+pick : Tree a -> Random.Generator ( ( Float, a ), Maybe (Tree a) )
+pick t =
+    Random.float 0 (getWeight t)
+        |> Random.map (\x -> pickHelp x t [])
+        |> Random.map
+            (\( c, l ) ->
+                case l of
+                    [] ->
+                        ( c, Nothing )
+
+                    head :: tail ->
+                        ( c
+                        , Just (reconstruct head tail)
+                        )
+            )
+
+
+pickHelp : Float -> Tree a -> List (Tree a) -> ( ( Float, a ), List (Tree a) )
+pickHelp x t l =
+    case t of
+        Leaf { content, weight } ->
+            ( ( weight, content ), l )
+
+        Branch { left, right } ->
+            let
+                wl =
+                    getWeight left
+            in
+            if x > wl then
+                pickHelp (x - wl) right (left :: l)
+
+            else
+                pickHelp x left (right :: l)
+
+
+reconstruct : Tree a -> List (Tree a) -> Tree a
+reconstruct =
+    List.foldl
+        (\crr acc ->
+            Branch
+                { left = acc
+                , right = crr
+                , weight =
+                    getWeight acc
+                        + getWeight crr
+                }
+        )
+
+
+{-| Returns a `Random.Generator` that produces n weighted contents selected randomly from the tree. The result includes the remaining tree structure.
+-}
+take : Int -> Tree a -> Random.Generator ( List ( Float, a ), Maybe (Tree a) )
+take n t =
+    takeHelp n t []
+
+
+takeHelp :
+    Int
+    -> Tree a
+    -> List ( Float, a )
+    -> Random.Generator ( List ( Float, a ), Maybe (Tree a) )
+takeHelp n t l =
+    if n <= 0 then
+        Random.constant ( l, Just t )
+
+    else
+        pick t
+            |> Random.andThen
+                (\( c, mt ) ->
+                    case mt of
+                        Nothing ->
+                            Random.constant ( c :: l, Nothing )
+
+                        Just newT ->
+                            takeHelp (n - 1) newT (c :: l)
+                )
+
+
+{-| Returns `Random.Generator` that generates the argument tree whose `n` elements are removed randomly. The returned value is wrapped in `Maybe` just in case all the elements have been removed.
+-}
+drop : Int -> Tree a -> Random.Generator (Maybe (Tree a))
+drop n t =
+    take n t
+        |> Random.map Tuple.second
+
+
+{-| Removes all instances of the specified element from the `RandomTree.Weighted.Tree`. The result is wrapped in a `Maybe` type to indicate if the tree is empty after removal.
+-}
+remove : a -> Tree a -> Maybe (Tree a)
+remove a =
+    reduce
+        (\({ content, weight } as record) ->
+            if a == content then
+                Nothing
+
+            else
+                Just (Leaf record)
+        )
+        (\mleft mright ->
+            case mleft of
+                Nothing ->
+                    mright
+
+                Just leftProcessed ->
+                    case mright of
+                        Nothing ->
+                            mleft
+
+                        Just rightProcessed ->
+                            Just
+                                (Branch
+                                    { left = leftProcessed
+                                    , right = rightProcessed
+                                    , weight =
+                                        getWeight leftProcessed
+                                            + getWeight rightProcessed
+                                    }
+                                )
+        )
+
+
+{-| Filters the `RandomTree.Weighted.Tree` by removing elements that do not satisfy the provided predicate function. The result is wrapped in a `Maybe` type to indicate if the tree is empty after filtering.
+-}
+filter : (( Float, a ) -> Bool) -> Tree a -> Maybe (Tree a)
+filter predicate =
+    reduce
+        (\({ content, weight } as record) ->
+            if predicate ( weight, content ) then
+                Just (Leaf record)
+
+            else
+                Nothing
+        )
+        (\mleft mright ->
+            case mleft of
+                Nothing ->
+                    mright
+
+                Just leftProcessed ->
+                    case mright of
+                        Nothing ->
+                            mleft
+
+                        Just rightProcessed ->
+                            Just
+                                (Branch
+                                    { left = leftProcessed
+                                    , right = rightProcessed
+                                    , weight =
+                                        getWeight leftProcessed
+                                            + getWeight rightProcessed
+                                    }
+                                )
+        )
+
+
+{-| Maps the weighted contents of the tree using the provided function.
+-}
+map : (( Float, a ) -> ( Float, a )) -> Tree a -> Tree a
+map func =
+    reduce
+        (\{ content, weight } ->
+            case func ( weight, content ) of
+                ( mappedWeight, mappedContent ) ->
+                    Leaf
+                        { content = mappedContent
+                        , weight = abs mappedWeight
+                        }
+        )
+        (\left right ->
+            Branch
+                { left = left
+                , right = right
+                , weight =
+                    getWeight left
+                        + getWeight right
+                }
+        )
+
+
+{-| Maps the weight of each element in the tree using the provided function.
+-}
+mapWeight : (( Float, a ) -> Float) -> Tree a -> Tree a
+mapWeight func =
+    map (\(( _, c ) as tuple) -> ( func tuple, c ))
+
+
+{-| Maps the content of each element in the tree using the provided function.
+-}
+mapContent : (( Float, a ) -> a) -> Tree a -> Tree a
+mapContent func =
+    map (\(( w, _ ) as tuple) -> ( w, func tuple ))
+
+
+{-| Adjusts the total weight of the tree to the specified value.
+-}
+adjustTotalWeightTo : Float -> Tree a -> Tree a
+adjustTotalWeightTo w t =
+    adjustTotalWeightToHelp (abs w) t
+
+
+adjustTotalWeightToHelp : Float -> Tree a -> Tree a
+adjustTotalWeightToHelp w t =
+    case t of
+        Leaf { content } ->
+            Leaf
+                { content = content
+                , weight = w
+                }
+
+        Branch { left, right } ->
+            let
+                wl =
+                    getWeight left
+
+                wr =
+                    getWeight right
+
+                newWl =
+                    w * wl / (wl + wr)
+
+                newWr =
+                    w - newWl
+
+                newLeft =
+                    adjustTotalWeightTo newWl left
+
+                newRight =
+                    adjustTotalWeightTo newWr right
+            in
+            Branch
+                { left = newLeft
+                , right = newRight
+                , weight =
+                    getWeight newLeft
+                        + getWeight newRight
+                }

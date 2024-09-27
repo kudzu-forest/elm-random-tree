@@ -2,7 +2,7 @@ module RandomTree.Uniform exposing
     ( Tree
     , singleton, fromList
     , insert, insertList
-    , map, filter, delete
+    , map, filter, remove
     , get, take, replace
     , count
     )
@@ -15,10 +15,10 @@ module RandomTree.Uniform exposing
 `Tree` in this module
 
   - is not allowed to be empty, so
-      - the return value of function that reduce the number of element(`take`, `delete`, and `filter`) all return `Maybe (Tree a)` just in case all the elements are deleted.
+      - the return value of function that reduce the number of element(`take`, `remove`, and `filter`) all return `Maybe (Tree a)` just in case all the elements are deleted.
       - You have to pass at least one element at the creation, so function like `fromList` takes one heading element and tailing list.(similar with `Random.uniform` or `Random.weighted`.)
-  - is not a search tree(the elements are not ordered), so the time complexity of `member` and `delete` is _O(N)_.
-  - may be unbalanced when `delete` or `filter` is called, so when I say "The time complexity is _O(log(N))_", _N_ denotes the maximal size in the history of the tree so far.
+  - is not a search tree(the elements are not ordered), so the time complexity of `member` and `remove` is _O(N)_.
+  - may be unbalanced when `remove` or `filter` is called, so when I say "The time complexity is _O(log(N))_", _N_ denotes the maximal size in the history of the tree so far.
 
 
 # Types
@@ -38,7 +38,7 @@ module RandomTree.Uniform exposing
 
 # Modification
 
-@docs map, filter, delete
+@docs map, filter, remove
 
 
 # Random Picking Up
@@ -233,7 +233,46 @@ get_ x n =
             leaf
 
 
-{-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree. The time complexity is _O(log(N))_.
+{-| Random generator that generates one of the elements conteined in `Tree`, paired with the rest part of the tree. For example,
+
+    take
+            ／＼
+          ／    ＼
+        ／＼    ／＼
+      ／＼  c  d    e
+     a    b
+
+generates
+
+    ( a， Just  ／＼    ),
+              ／    ＼
+            ／＼    ／＼
+           b    c  d    e
+
+    ( b，Just   ／＼    ),
+              ／    ＼
+            ／＼    ／＼
+           a    c  d    e
+
+    ( c，Just  ／＼    ),
+             ／    ＼
+          ／＼     ／＼
+          a    b  d    e
+
+    ( d，Just   ／＼    ),
+              ／    ＼
+            ／＼    ／＼
+           a    b  c    e
+
+or
+
+    ( e，Just   ／＼    )
+              ／    ＼
+            ／＼    ／＼
+           a    b  c    d
+
+in probability of 20%. The time complexity is _O(log(N))_.
+
 -}
 take : Tree a -> Random.Generator ( a, Maybe (Tree a) )
 take (Tree t) =
@@ -276,7 +315,50 @@ take_ x t list =
                     ( e, Nothing )
 
 
-{-| Random generator that replaces one data from the tree and generates a pair consisting of the removed data and resultant tree.
+{-| Random generator that replaces one data from the tree and generates a pair consisting of the removed data and resultant tree. For example,
+
+    replace x  ／＼
+             ／    ＼
+           ／＼    ／＼
+         ／＼  c  d    e
+        a    b
+
+generates
+
+    ( a，  ／＼    ),
+         ／    ＼
+       ／＼    ／＼
+     ／＼  c  d    e
+    x    b
+
+    ( b，  ／＼    ),
+         ／    ＼
+       ／＼    ／＼
+     ／＼  c  d    e
+    a    x
+
+    ( c，  ／＼    ),
+         ／    ＼
+       ／＼    ／＼
+     ／＼  x  d    e
+    a    b
+
+    ( d，  ／＼    ),
+         ／    ＼
+       ／＼    ／＼
+     ／＼  c  x    e
+    a    b
+
+or
+
+    ( e，  ／＼    ),
+         ／    ＼
+       ／＼    ／＼
+     ／＼  c  d    x
+    a    b
+
+in probability of 20%. The time complexity is _O(log(N))_.
+
 -}
 replace : a -> Tree a -> Random.Generator ( a, Tree a )
 replace e (Tree c) =
@@ -403,8 +485,8 @@ filter f (Tree r) =
 
 {-| Removes any number of elements which is the same as the first parameter from the second parameter.
 -}
-delete : a -> Tree a -> Maybe (Tree a)
-delete a =
+remove : a -> Tree a -> Maybe (Tree a)
+remove a =
     filter ((/=) a)
 
 
